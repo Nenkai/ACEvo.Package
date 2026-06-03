@@ -1,4 +1,7 @@
-﻿using System;
+﻿// Copyright (c) 2026 Nenkai
+// SPDX-License-Identifier: MIT
+
+using System;
 using System.Buffers;
 using System.Buffers.Binary;
 using System.Collections.Generic;
@@ -23,15 +26,18 @@ public class PackFile : IDisposable
     private readonly ILogger _logger;
 
     private const ulong KEY = 0x9F9721A97D1135C1uL;
-    private const long FILE_TABLE_SIZE = 0x2000000;  // 32mb
-    private const long MAX_FILE_COUNT = FILE_TABLE_SIZE / 0x100;
+    private static readonly List<long> FILE_TABLE_SIZES =
+    [
+        0x4_000_000, // 64mb, >=0.7.
+        0x2_000_000  // 32mb, <0.7.
+    ];  
 
     private Dictionary<string, PackFileEntry> _fileTable = [];
     private Dictionary<ulong, PackFileEntry> _fileTableKeys = [];
 
     private FileStream _packStream;
 
-    public PackFile(FileStream stream, ILoggerFactory loggerFactory = null)
+    public PackFile(FileStream stream, ILoggerFactory? loggerFactory = null)
     {
         ArgumentNullException.ThrowIfNull(stream, nameof(stream));
 
@@ -42,19 +48,23 @@ public class PackFile : IDisposable
             _logger = _loggerFactory.CreateLogger(GetType().ToString());
     }
 
-    public static PackFile Open(string file, ILoggerFactory loggerFactory = null)
+    public static PackFile Open(string file, ILoggerFactory? loggerFactory = null)
     {
         var fs = File.OpenRead(file);
-        fs.Position = fs.Length - FILE_TABLE_SIZE;
 
-        byte[] fileTableBytes = new byte[FILE_TABLE_SIZE];
+        long tableSize = DetectFileTableSize(fs);
+        long maxEntries = tableSize / 0x100;
+
+        fs.Position = fs.Length - tableSize;
+
+        byte[] fileTableBytes = new byte[tableSize];
         fs.ReadExactly(fileTableBytes);
         Xor(fileTableBytes, KEY);
 
         SpanReader sr = new SpanReader(fileTableBytes);
 
         var packFile = new PackFile(fs, loggerFactory);
-        for (int i = 0; i < MAX_FILE_COUNT; i++)
+        for (int i = 0; i < maxEntries; i++)
         {
             byte[] entryBytes = sr.ReadBytes(0x100);
             var entry = MemoryMarshal.Cast<byte, PackFileEntry>(entryBytes)[0];
@@ -169,6 +179,43 @@ public class PackFile : IDisposable
 
             key >>= 8;
         }
+    }
+
+    private static long DetectFileTableSize(FileStream fs)
+    {
+        Span<byte> entryBuf = stackalloc byte[0x100];
+        Span<byte> copyBuf = stackalloc byte[0x100];
+
+        foreach (long tableSize in FILE_TABLE_SIZES)
+        {
+            fs.Position = fs.Length - tableSize;
+            fs.ReadExactly(entryBuf);
+
+            entryBuf.CopyTo(copyBuf);
+            Xor(copyBuf, KEY);
+
+            var entry = MemoryMarshal.Cast<byte, PackFileEntry>(copyBuf)[0];
+            if (IsValidFile(entry))
+                return tableSize;
+        }
+
+        throw new InvalidDataException("Could not detect a valid file table size.");
+    }
+
+    // Some heuristics to check if a file is valid, not perfect but should cover most cases
+    private static unsafe bool IsValidFile(PackFileEntry entry)
+    {
+        if (entry.PathHash == 0)
+            return false;
+
+        if (entry.FileNameLength <= 0 || entry.FileNameLength > 260)
+            return false;
+
+        ReadOnlySpan<byte> strBytes = new Span<byte>(entry.FileNameBuffer, entry.FileNameLength);
+        if (!Encoding.ASCII.GetString(strBytes).StartsWith("content\\"))
+            return false;
+
+        return true;
     }
 
     public void Dispose()
