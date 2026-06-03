@@ -21,7 +21,7 @@ Grab the latest in [releases](https://github.com/Nenkai/ACEvo.Package/releases).
 
 ## Building
 
-.NET 9.0 and Visual Studio 2022.
+.NET 10.0 SDK.
 
 Contributions are welcome.
 
