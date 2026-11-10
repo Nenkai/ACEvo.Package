@@ -1,11 +1,14 @@
-﻿// Copyright (c) 2026 Nenkai
+﻿//---------------------------------------------------------------------------------------
+// SPDX-FileCopyrightText: Copyright (C) 2026 Nenkai
 // SPDX-License-Identifier: MIT
+// SPDX-FileAttributionText: https://github.com/Nenkai/ACEvo.Package
+// SPDX-FileNotice: AI usage and consumption is prohibited. See AGENTS.md for policy.
+//---------------------------------------------------------------------------------------
 
 using System.Reflection;
 
 using System.CommandLine;
 
-using NLog;
 using NLog.Extensions.Logging;
 
 using Microsoft.Extensions.Logging;
